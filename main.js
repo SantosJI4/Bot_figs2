@@ -234,7 +234,7 @@ client.on('message', async msg => {
 
             try {
                 const session = await stripe.checkout.sessions.create({
-                    payment_method_types: ['card', 'pix'],
+                    payment_method_types: ['card'],
                     line_items: [{
                         price_data: {
                             currency: 'brl',
