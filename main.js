@@ -49,6 +49,7 @@ db.serialize(() => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT,
         filename TEXT,
+        mimetype TEXT DEFAULT 'image/webp', -- Nova Coluna!
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 });
@@ -186,7 +187,8 @@ client.on('message', async msg => {
                 
                 const filename = `sticker_vip_${userId.replace(/[^0-9]/g, '')}_${Date.now()}.webp`;
                 fs.writeFileSync(path.join(stickersDir, filename), stateData.media.data, 'base64');
-                await dbRun(`INSERT INTO Stickers (user_id, filename) VALUES (?, ?)`, [userId, filename]);
+                // ALTERADO PARA SALVAR O MIMETYPE JUNTO:
+                await dbRun(`INSERT INTO Stickers (user_id, filename, mimetype) VALUES (?, ?, ?)`, [userId, filename, stateData.media.mimetype]);
 
                 await client.sendMessage(msg.from, stateData.media, { 
                     sendMediaAsSticker: true,
@@ -241,7 +243,7 @@ client.on('message', async msg => {
                                 name: 'Acesso VIP - Bot de Figurinhas',
                                 description: 'Figurinhas e consultas ilimitadas, GIFs, personalização de nome e banco global.',
                             },
-                            unit_amount: 60, // R$ 9,90 (em centavos)
+                            unit_amount: 1199, // R$ 9,90 (em centavos)
                         },
                         quantity: 1,
                     }],
@@ -259,60 +261,97 @@ client.on('message', async msg => {
             return;
         }
 
-        // 🖼️ CONSULTAS DE FIGURINHAS
-        if (body === '!minhasfigs') {
+       if (body === '!minhasfigs') {
+            console.log(`[LOG] Usuário ${userId} solicitou !minhasfigs`);
             if (!user.is_vip && user.consults_today >= 3) {
                 await client.sendMessage(msg.from, '❌ Limite de 3 consultas diárias atingido. Assine o VIP para consultas ilimitadas! (/sobrevip)');
                 return;
             }
 
-            const userStickers = await dbAll(`SELECT filename FROM Stickers WHERE user_id = ?`, [userId]);
+            try {
+                // Buscamos o filename e o mimetype real salvo
+                const userStickers = await dbAll(`SELECT filename, mimetype FROM Stickers WHERE user_id = ?`, [userId]);
+                console.log(`[LOG] Figurinhas encontradas no banco para este ID: ${userStickers.length}`);
 
-            if (userStickers.length === 0) {
-                await client.sendMessage(msg.from, 'Você ainda não tem figurinhas salvas!');
-            } else {
-                if (!user.is_vip) await dbRun(`UPDATE Users SET consults_today = consults_today + 1 WHERE id = ?`, [userId]);
-                await client.sendMessage(msg.from, `Enviando suas ${userStickers.length} figurinhas... 🚀`);
-                
-                for (const row of userStickers) {
-                    const filePath = path.join(stickersDir, row.filename);
-                    if (fs.existsSync(filePath)) {
-                        const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
-                        await client.sendMessage(msg.from, new MessageMedia('image/webp', stickerData), { sendMediaAsSticker: true });
+                if (!userStickers || userStickers.length === 0) {
+                    await client.sendMessage(msg.from, '⚠️ Você não tem figurinhas registradas no banco de dados! Crie uma usando /criar primeiro.');
+                } else {
+                    if (!user.is_vip) await dbRun(`UPDATE Users SET consults_today = consults_today + 1 WHERE id = ?`, [userId]);
+                    await client.sendMessage(msg.from, `Enviando suas ${userStickers.length} figurinhas... 🚀`);
+                    
+                    for (const row of userStickers) {
+                        const filePath = path.join(stickersDir, row.filename);
+                        if (fs.existsSync(filePath)) {
+                            const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
+                            
+                            // Usamos o mimetype correto recuperado do banco (ex: image/jpeg ou image/png)
+                            // Isso impede o node-webpmux de tentar ler um cabeçalho RIFF inexistente
+                            const tipoMidia = row.mimetype || 'image/webp';
+                            const media = new MessageMedia(tipoMidia, stickerData);
+                            
+                            await client.sendMessage(msg.from, media, { 
+                                sendMediaAsSticker: true,
+                                stickerName: "Minhas Figs",
+                                stickerAuthor: "Bot VIP"
+                            });
+                        } else {
+                            console.log(`[LOG] Arquivo listado no banco mas sumiu do disco: ${row.filename}`);
+                        }
                     }
                 }
+            } catch (dbErr) {
+                console.error('❌ Erro ao ler tabela Stickers:', dbErr);
+                await client.sendMessage(msg.from, '❌ Erro interno ao acessar seu banco de figurinhas.');
             }
             return;
         }
 
-        // 🌍 BANCO GLOBAL DE FIGURINHAS (VIP)
+        // 🌍 BANCO GLOBAL DE FIGURINHAS (VIP - CORRIGIDO)
         if (body.startsWith('/figsglobal')) {
+            console.log(`[LOG] VIP ${userId} solicitou /figsglobal`);
             if (!user.is_vip) {
                 await client.sendMessage(msg.from, '👑 Comando exclusivo para VIPs! Digite /sobrevip para saber mais.');
                 return;
             }
+            
             const args = body.split(' ');
             let limit = parseInt(args[1]);
             if (isNaN(limit) || limit <= 0) limit = 5;
-            if (limit > 30) limit = 30; // Proteção contra spam
+            if (limit > 30) limit = 30; 
 
-            const globalStickers = await dbAll(`SELECT filename FROM Stickers ORDER BY RANDOM() LIMIT ?`, [limit]);
-            if (globalStickers.length === 0) {
-                await client.sendMessage(msg.from, 'O banco global está vazio!');
-                return;
-            }
+            try {
+                const globalStickers = await dbAll(`SELECT filename, mimetype FROM Stickers ORDER BY RANDOM() LIMIT ?`, [limit]);
+                console.log(`[LOG] Figurinhas globais encontradas no banco: ${globalStickers.length}`);
 
-            await client.sendMessage(msg.from, `🌍 Puxando ${globalStickers.length} figurinhas aleatórias do multiverso...`);
-            for (const row of globalStickers) {
-                const filePath = path.join(stickersDir, row.filename);
-                if (fs.existsSync(filePath)) {
-                    const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
-                    await client.sendMessage(msg.from, new MessageMedia('image/webp', stickerData), { sendMediaAsSticker: true });
+                if (!globalStickers || globalStickers.length === 0) {
+                    await client.sendMessage(msg.from, '🌍 O banco de dados global está vazio no momento. Crie novas figurinhas usando /criar!');
+                    return;
                 }
+
+                await client.sendMessage(msg.from, `🌍 Puxando ${globalStickers.length} figurinhas aleatórias do multiverso...`);
+                for (const row of globalStickers) {
+                    const filePath = path.join(stickersDir, row.filename);
+                    if (fs.existsSync(filePath)) {
+                        const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
+                        
+                        const tipoMidia = row.mimetype || 'image/webp';
+                        const media = new MessageMedia(tipoMidia, stickerData);
+                        
+                        await client.sendMessage(msg.from, media, { 
+                            sendMediaAsSticker: true,
+                            stickerName: "Do Multiverso",
+                            stickerAuthor: "Bot VIP"
+                        });
+                    } else {
+                        console.log(`[LOG] Arquivo global listado no banco mas não existe no disco: ${row.filename}`);
+                    }
+                }
+            } catch (dbErr) {
+                console.error('❌ Erro no comando /figsglobal:', dbErr);
+                await client.sendMessage(msg.from, '❌ Erro ao realizar busca global no banco de dados.');
             }
             return;
         }
-
         // ✂️ CRIAÇÃO DE FIGURINHAS
         if (body.startsWith('/criar') && msg.hasMedia) {
             if (!user.is_vip && user.creations_today >= 10) {
@@ -352,7 +391,9 @@ client.on('message', async msg => {
             if (media && media.mimetype && media.mimetype.startsWith('image/')) {
                 const filename = `sticker_${userId.replace(/[^0-9]/g, '')}_${Date.now()}.webp`;
                 fs.writeFileSync(path.join(stickersDir, filename), media.data, 'base64');
-                await dbRun(`INSERT INTO Stickers (user_id, filename) VALUES (?, ?)`, [userId, filename]);
+                // ALTERADO PARA SALVAR O MIMETYPE JUNTO:
+                await dbRun(`INSERT INTO Stickers (user_id, filename, mimetype) VALUES (?, ?, ?)`, [userId, filename, media.mimetype]);
+                await dbRun(`UPDATE Users SET creations_today = creations_today + 1 WHERE id = ?`, [userId]);
             }
         }
 
