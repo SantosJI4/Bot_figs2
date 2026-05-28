@@ -234,7 +234,6 @@ client.on('message', async msg => {
 
             try {
                 const session = await stripe.checkout.sessions.create({
-                    payment_method_types: ['card'],
                     line_items: [{
                         price_data: {
                             currency: 'brl',
@@ -242,7 +241,7 @@ client.on('message', async msg => {
                                 name: 'Acesso VIP - Bot de Figurinhas',
                                 description: 'Figurinhas e consultas ilimitadas, GIFs, personalização de nome e banco global.',
                             },
-                            unit_amount: 990, // R$ 9,90 (em centavos)
+                            unit_amount: 10, // R$ 9,90 (em centavos)
                         },
                         quantity: 1,
                     }],
