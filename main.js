@@ -26,7 +26,8 @@ if (!fs.existsSync(stickersDir)) fs.mkdirSync(stickersDir);
 const userStates = new Map(); 
 
 // ==========================================
-// 🗄️ BANCO DE DADOS (SQLite3)
+// ==========================================
+// 🗄️ BANCO DE DADOS (SQLite3) - CORRIGIDO
 // ==========================================
 const db = new sqlite3.Database('./bot.db', (err) => {
     if (err) console.error('❌ Erro ao conectar ao banco:', err.message);
@@ -34,6 +35,7 @@ const db = new sqlite3.Database('./bot.db', (err) => {
 });
 
 db.serialize(() => {
+    // Criação da tabela de Usuários
     db.run(`CREATE TABLE IF NOT EXISTS Users (
         id TEXT PRIMARY KEY,
         is_vip INTEGER DEFAULT 0,
@@ -45,13 +47,23 @@ db.serialize(() => {
         phone TEXT
     )`);
 
+    // Criação da tabela de Figurinhas
     db.run(`CREATE TABLE IF NOT EXISTS Stickers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT,
         filename TEXT,
-        mimetype TEXT DEFAULT 'image/webp', -- Nova Coluna!
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+    )`, () => {
+        // CORREÇÃO CRUCIAL: Adiciona a coluna mimetype automaticamente caso ela ainda não exista
+        db.run(`ALTER TABLE Stickers ADD COLUMN mimetype TEXT DEFAULT 'image/webp'`, (alterErr) => {
+            if (alterErr) {
+                // Se der erro aqui, é porque a coluna já existe, então está tudo bem!
+                console.log('ℹ️ Coluna "mimetype" já existente ou tabela atualizada.');
+            } else {
+                console.log('✅ Coluna "mimetype" adicionada com sucesso na tabela Stickers!');
+            }
+        });
+    });
 });
 
 // Helpers usando Promises para o banco de dados
@@ -284,16 +296,21 @@ client.on('message', async msg => {
                         if (fs.existsSync(filePath)) {
                             const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
                             
-                            // Usamos o mimetype correto recuperado do banco (ex: image/jpeg ou image/png)
-                            // Isso impede o node-webpmux de tentar ler um cabeçalho RIFF inexistente
-                            const tipoMidia = row.mimetype || 'image/webp';
+                            // Se o mimetype for image/webp, mas o arquivo foi criado de forma antiga,
+                            // o whatsapp-web.js quebra. Vamos forçar 'image/jpeg' se o arquivo não tiver o cabeçalho correto
+                            let tipoMidia = row.mimetype || 'image/jpeg'; 
+                            if (tipoMidia === 'image/webp' && !stickerData.startsWith('UklGR')) {
+                                // Se não começa com 'UklGR' (cabeçalho RIFF em base64), não é um WebP real!
+                                tipoMidia = 'image/jpeg'; 
+                            }
+
                             const media = new MessageMedia(tipoMidia, stickerData);
                             
                             await client.sendMessage(msg.from, media, { 
                                 sendMediaAsSticker: true,
                                 stickerName: "Minhas Figs",
                                 stickerAuthor: "Bot VIP"
-                            });
+                            }).catch(err => console.log(`[ERRO ENVIO] Falha ao converter arquivo antigo: ${row.filename}`));
                         } else {
                             console.log(`[LOG] Arquivo listado no banco mas sumiu do disco: ${row.filename}`);
                         }
@@ -330,22 +347,29 @@ client.on('message', async msg => {
 
                 await client.sendMessage(msg.from, `🌍 Puxando ${globalStickers.length} figurinhas aleatórias do multiverso...`);
                 for (const row of globalStickers) {
-                    const filePath = path.join(stickersDir, row.filename);
-                    if (fs.existsSync(filePath)) {
-                        const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
-                        
-                        const tipoMidia = row.mimetype || 'image/webp';
-                        const media = new MessageMedia(tipoMidia, stickerData);
-                        
-                        await client.sendMessage(msg.from, media, { 
-                            sendMediaAsSticker: true,
-                            stickerName: "Do Multiverso",
-                            stickerAuthor: "Bot VIP"
-                        });
-                    } else {
-                        console.log(`[LOG] Arquivo global listado no banco mas não existe no disco: ${row.filename}`);
+                        const filePath = path.join(stickersDir, row.filename);
+                        if (fs.existsSync(filePath)) {
+                            const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
+                            
+                            // Se o mimetype for image/webp, mas o arquivo foi criado de forma antiga,
+                            // o whatsapp-web.js quebra. Vamos forçar 'image/jpeg' se o arquivo não tiver o cabeçalho correto
+                            let tipoMidia = row.mimetype || 'image/jpeg'; 
+                            if (tipoMidia === 'image/webp' && !stickerData.startsWith('UklGR')) {
+                                // Se não começa com 'UklGR' (cabeçalho RIFF em base64), não é um WebP real!
+                                tipoMidia = 'image/jpeg'; 
+                            }
+
+                            const media = new MessageMedia(tipoMidia, stickerData);
+                            
+                            await client.sendMessage(msg.from, media, { 
+                                sendMediaAsSticker: true,
+                                stickerName: "Minhas Figs",
+                                stickerAuthor: "Bot VIP"
+                            }).catch(err => console.log(`[ERRO ENVIO] Falha ao converter arquivo antigo: ${row.filename}`));
+                        } else {
+                            console.log(`[LOG] Arquivo listado no banco mas sumiu do disco: ${row.filename}`);
+                        }
                     }
-                }
             } catch (dbErr) {
                 console.error('❌ Erro no comando /figsglobal:', dbErr);
                 await client.sendMessage(msg.from, '❌ Erro ao realizar busca global no banco de dados.');
