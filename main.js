@@ -241,7 +241,7 @@ client.on('message', async msg => {
                                 name: 'Acesso VIP - Bot de Figurinhas',
                                 description: 'Figurinhas e consultas ilimitadas, GIFs, personalização de nome e banco global.',
                             },
-                            unit_amount: 10, // R$ 9,90 (em centavos)
+                            unit_amount: 60, // R$ 9,90 (em centavos)
                         },
                         quantity: 1,
                     }],
