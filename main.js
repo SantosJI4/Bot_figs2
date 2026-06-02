@@ -6,36 +6,51 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
 
-// ==========================================
-// 💳 CONFIGURAÇÃO DA STRIPE
-// ==========================================
 if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
-    console.error('❌ ERRO: STRIPE_SECRET_KEY e STRIPE_WEBHOOK_SECRET não foram configurados no .env');
+    console.error('ERRO: STRIPE_SECRET_KEY e STRIPE_WEBHOOK_SECRET não configurados no .env');
     process.exit(1);
 }
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET; 
 
-// ==========================================
-// 📂 CONFIGURAÇÃO DE PASTAS E ESTADOS
-// ==========================================
 const stickersDir = path.join(__dirname, 'stickers');
 if (!fs.existsSync(stickersDir)) fs.mkdirSync(stickersDir);
 
-// Controle de estado para conversas interativas (ex: VIP escolhendo nome da figurinha)
+const productsDir = path.join(__dirname, 'produtos');
+if (!fs.existsSync(productsDir)) fs.mkdirSync(productsDir);
+
 const userStates = new Map(); 
 
-// ==========================================
-// ==========================================
-// 🗄️ BANCO DE DADOS (SQLite3) - CORRIGIDO
-// ==========================================
+const catalogoProdutos = {
+    '1': { 
+        nome: "E-book: Guia Definitivo do Kali Linux", 
+        preco: 2500, 
+        descricao: "Aprenda os fundamentos de pentest.",
+        tipoEntrega: "arquivo",
+        payload: "ebook_kali.pdf" 
+    },
+    '2': { 
+        nome: "Acesso ao Grupo VIP Hackers", 
+        preco: 5000, 
+        descricao: "Faça networking com a elite.",
+        tipoEntrega: "link", 
+        payload: "https://chat.whatsapp.com/SEU_LINK_AQUI" 
+    },
+    '3': { 
+        nome: "Script Python Bypass Premium", 
+        preco: 8000, 
+        descricao: "Script indetectável atualizado.",
+        tipoEntrega: "arquivo", 
+        payload: "script_bypass_v2.zip" 
+    }
+};
+
 const db = new sqlite3.Database('./bot.db', (err) => {
-    if (err) console.error('❌ Erro ao conectar ao banco:', err.message);
-    else console.log('🗄️ Banco de dados SQLite conectado com sucesso.');
+    if (err) console.error('Erro ao conectar ao banco:', err.message);
+    else console.log('Banco de dados SQLite conectado.');
 });
 
 db.serialize(() => {
-    // Criação da tabela de Usuários
     db.run(`CREATE TABLE IF NOT EXISTS Users (
         id TEXT PRIMARY KEY,
         is_vip INTEGER DEFAULT 0,
@@ -47,26 +62,16 @@ db.serialize(() => {
         phone TEXT
     )`);
 
-    // Criação da tabela de Figurinhas
     db.run(`CREATE TABLE IF NOT EXISTS Stickers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT,
         filename TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`, () => {
-        // CORREÇÃO CRUCIAL: Adiciona a coluna mimetype automaticamente caso ela ainda não exista
-        db.run(`ALTER TABLE Stickers ADD COLUMN mimetype TEXT DEFAULT 'image/webp'`, (alterErr) => {
-            if (alterErr) {
-                // Se der erro aqui, é porque a coluna já existe, então está tudo bem!
-                console.log('ℹ️ Coluna "mimetype" já existente ou tabela atualizada.');
-            } else {
-                console.log('✅ Coluna "mimetype" adicionada com sucesso na tabela Stickers!');
-            }
-        });
+        db.run(`ALTER TABLE Stickers ADD COLUMN mimetype TEXT DEFAULT 'image/webp'`, () => {});
     });
 });
 
-// Helpers usando Promises para o banco de dados
 const dbGet = (query, params = []) => new Promise((resolve, reject) => db.get(query, params, (err, row) => err ? reject(err) : resolve(row)));
 const dbRun = (query, params = []) => new Promise((resolve, reject) => db.run(query, params, function(err) { err ? reject(err) : resolve(this) }));
 const dbAll = (query, params = []) => new Promise((resolve, reject) => db.all(query, params, (err, rows) => err ? reject(err) : resolve(rows)));
@@ -87,9 +92,6 @@ async function getUser(userId) {
     return user;
 }
 
-// ==========================================
-// 🤖 INICIALIZAÇÃO DO CLIENTE WHATSAPP
-// ==========================================
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -102,77 +104,72 @@ const client = new Client({
 let botReady = false;
 
 client.on('qr', (qr) => qrcode.generate(qr, { small: true }));
-client.on('authenticated', () => console.log('🔐 WhatsApp Autenticado!'));
-client.on('ready', () => { botReady = true; console.log('🚀 Cliente WhatsApp pronto para receber mensagens!'); });
+client.on('authenticated', () => console.log('WhatsApp Autenticado!'));
+client.on('ready', () => { botReady = true; console.log('Cliente WhatsApp pronto!'); });
 
-// ==========================================
-// 🌐 SERVIDOR EXPRESS (WEBHOOK DA STRIPE)
-// ==========================================
 const app = express();
 
-// A Stripe precisa do corpo bruto (raw) para validar a assinatura de segurança
 app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     let event;
 
     try {
-        // Valida se a requisição realmente veio da Stripe
         event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
     } catch (err) {
-        console.error('❌ Erro no Webhook da Stripe:', err.message);
+        console.error('Erro no Webhook da Stripe:', err.message);
         return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
     if (event.type === 'checkout.session.completed') {
         const session = event.data.object;
-        const userId = session.metadata.whatsapp_id; // Recupera o ID do WhatsApp
+        const userId = session.metadata.whatsapp_id;
+        const tipoCompra = session.metadata.tipo_compra;
 
-        console.log(`💰 Pagamento aprovado para: ${userId}`);
+        if (!botReady) {
+            console.log('Bot não está pronto para enviar a mensagem de aprovação.');
+            return res.json({received: true});
+        }
 
-        // Atualiza banco de dados
-        await dbRun(`UPDATE Users SET is_vip = 1 WHERE id = ?`, [userId]);
+        if (tipoCompra === 'vip') {
+            await dbRun(`UPDATE Users SET is_vip = 1 WHERE id = ?`, [userId]);
+            await client.sendMessage(userId, '🎉 *PAGAMENTO APROVADO!* 🎉\n\nSeja muito bem-vindo ao VIP! O seu acesso ilimitado já está ativo. Digite */sobrevip* para ver seus novos poderes!');
+        
+        } else if (tipoCompra === 'produto') {
+            const productId = session.metadata.product_id;
+            const produto = catalogoProdutos[productId];
 
-        // Manda mensagem de boas-vindas pelo WhatsApp
-        if (botReady) {
-            await client.sendMessage(userId, '🎉 *PAGAMENTO APROVADO!* 🎉\n\nSeja muito bem-vindo ao VIP! O seu acesso ilimitado já está ativo. Digite */sobrevip* para ver seus novos poderes e comece a criar figurinhas épicas!');
+            if (!produto) {
+                 await client.sendMessage(userId, '✅ Pagamento aprovado, mas houve um erro ao localizar seu produto. Chame o suporte!');
+                 return res.json({received: true});
+            }
+
+            await client.sendMessage(userId, `🎉 *PAGAMENTO APROVADO!* 🎉\n\nAqui está o seu pedido: *${produto.nome}*\nPreparando a entrega...`);
+
+            if (produto.tipoEntrega === 'link') {
+                await client.sendMessage(userId, `🔗 *Acesse seu produto aqui:*\n${produto.payload}`);
+            } else if (produto.tipoEntrega === 'arquivo') {
+                const filePath = path.join(productsDir, produto.payload);
+                if (fs.existsSync(filePath)) {
+                    const media = MessageMedia.fromFilePath(filePath);
+                    await client.sendMessage(userId, media);
+                    await client.sendMessage(userId, `📦 *Arquivo entregue com sucesso!* Bom proveito.`);
+                } else {
+                    console.error(`Arquivo não encontrado: ${filePath}`);
+                    await client.sendMessage(userId, '❌ *Erro interno:* O arquivo do seu produto não foi encontrado. Por favor, contate o suporte.');
+                }
+            }
         }
     }
 
     res.json({received: true});
 });
 
-// Páginas de sucesso/cancelamento
-app.get('/sucesso', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Pagamento Aprovado</title></head>
-        <body style="text-align: center; padding: 50px; font-family: Arial;">
-            <h1>✅ Pagamento Aprovado!</h1>
-            <p>Seu acesso VIP foi ativado. Volte ao WhatsApp para começar!</p>
-        </body>
-        </html>
-    `);
-});
-
-app.get('/cancelado', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Pagamento Cancelado</title></head>
-        <body style="text-align: center; padding: 50px; font-family: Arial;">
-            <h1>❌ Pagamento Cancelado</h1>
-            <p>Você pode tentar novamente enviando <strong>/comprarvip Nome | Email | Telefone</strong></p>
-        </body>
-        </html>
-    `);
-});
+app.get('/sucesso', (req, res) => res.send('<h1>✅ Pagamento Aprovado!</h1><p>Volte ao WhatsApp.</p>'));
+app.get('/cancelado', (req, res) => res.send('<h1>❌ Pagamento Cancelado</h1>'));
 
 const PORT = process.env.PORT || 80;
-app.listen(PORT, '0.0.0.0', () => console.log(`🌐 Servidor Webhook rodando na porta ${PORT}`));
-// ==========================================
-// 💬 EVENTOS DE MENSAGEM DO WHATSAPP
-// ==========================================
+app.listen(PORT, '0.0.0.0', () => console.log(`Servidor Webhook rodando na porta ${PORT}`));
+
 client.on('message', async msg => {
     if (!botReady) return;
 
@@ -181,7 +178,6 @@ client.on('message', async msg => {
         const userId = msg.author || msg.from; 
         const user = await getUser(userId);
         
-        // 🔄 MÁQUINA DE ESTADOS (Aguardando resposta do VIP)
         if (userStates.has(userId)) {
             const stateData = userStates.get(userId);
             
@@ -195,242 +191,222 @@ client.on('message', async msg => {
                     if (parts[1]) stickerAuthor = parts[1];
                 }
 
-                await client.sendMessage(msg.from, '⏳ Processando sua figurinha personalizada...');
-                
+                await client.sendMessage(msg.from, '⏳ Processando...');
                 const filename = `sticker_vip_${userId.replace(/[^0-9]/g, '')}_${Date.now()}.webp`;
                 fs.writeFileSync(path.join(stickersDir, filename), stateData.media.data, 'base64');
-                // ALTERADO PARA SALVAR O MIMETYPE JUNTO:
                 await dbRun(`INSERT INTO Stickers (user_id, filename, mimetype) VALUES (?, ?, ?)`, [userId, filename, stateData.media.mimetype]);
 
-                await client.sendMessage(msg.from, stateData.media, { 
-                    sendMediaAsSticker: true,
-                    stickerName: stickerName,
-                    stickerAuthor: stickerAuthor
-                });
-                await client.sendMessage(msg.from, '✅ Figurinha VIP criada e salva com sucesso!');
+                await client.sendMessage(msg.from, stateData.media, { sendMediaAsSticker: true, stickerName, stickerAuthor });
+                await client.sendMessage(msg.from, '✅ Figurinha VIP criada!');
                 userStates.delete(userId);
+                return;
+            }
+
+            if (stateData.state === 'WAITING_PRODUCT_CHOICE') {
+                const escolha = body.trim();
+                
+                if (escolha.toLowerCase() === 'cancelar') {
+                    userStates.delete(userId);
+                    await client.sendMessage(msg.from, '🛑 Compra cancelada.');
+                    return;
+                }
+
+                const produto = catalogoProdutos[escolha];
+                if (!produto) {
+                    await client.sendMessage(msg.from, '❌ Número inválido. Digite um número da lista ou *cancelar*.');
+                    return;
+                }
+
+                await client.sendMessage(msg.from, `⏳ Gerando link de pagamento para: *${produto.nome}*...`);
+
+                try {
+                    const session = await stripe.checkout.sessions.create({
+                        line_items: [{
+                            price_data: { currency: 'brl', product_data: { name: produto.nome, description: produto.descricao }, unit_amount: produto.preco },
+                            quantity: 1,
+                        }],
+                        mode: 'payment',
+                        success_url: process.env.SUCCESS_URL || 'https://bot-giulia-vip.squareweb.app/sucesso',
+                        cancel_url: process.env.CANCEL_URL || 'https://bot-giulia-vip.squareweb.app/cancelado',
+                        metadata: { whatsapp_id: userId, tipo_compra: 'produto', product_id: escolha }
+                    });
+
+                    await client.sendMessage(msg.from, `🛒 *Pedido gerado!*\n\nProduto: ${produto.nome}\nValor: R$ ${(produto.preco / 100).toFixed(2)}\n\nPague via Cartão ou PIX no link abaixo.\n🔗 ${session.url}`);
+                    userStates.delete(userId);
+                } catch (err) {
+                    await client.sendMessage(msg.from, '❌ Erro ao processar o pagamento.');
+                    userStates.delete(userId);
+                }
                 return;
             }
         }
 
-        // 🆘 COMANDOS BÁSICOS
         if (body === '!ajuda' || body === '/ajuda') {
-            const menu = `🤖 *Menu do Bot* 🤖\n\n*/criar* [com foto/gif] - Cria figurinha\n*!minhasfigs* - Mostra suas figurinhas salvas\n*/status* - Mostra seus limites diários\n*/sobrevip* - Conheça as vantagens exclusivas\n*/comprarvip* - Assine o plano Premium!`;
-            await client.sendMessage(msg.from, menu);
+            await client.sendMessage(msg.from, `🤖 *Menu do Bot*\n\n*/criar* [foto/gif] - Cria figurinha\n*!minhasfigs* - Suas figurinhas\n*/status* - Limites diários\n*/comprar* - Loja de Produtos\n*/sobrevip* - Vantagens VIP\n*/comprarvip* - Assinar VIP`);
             return;
         }
 
         if (body === '/sobrevip') {
-            const txtVip = `👑 *VANTAGENS DO VIP* 👑\n\n*Usuários Comuns:* 10 criações/dia, 3 consultas e figurinhas estáticas.\n\n*Usuários VIP:* \n♾️ Criações ilimitadas\n♾️ Consultas ilimitadas\n🎬 Criação de Figurinhas Animadas (GIF/Vídeo)\n✍️ Personalização do Nome e Autor da figurinha\n🌍 Acesso ao */figsglobal [numero]* para puxar figurinhas aleatórias do banco!\n\nDigite */comprarvip SeuNome | SeuEmail | SeuTelefone* para se tornar VIP!`;
-            await client.sendMessage(msg.from, txtVip);
+            await client.sendMessage(msg.from, `👑 *VANTAGENS DO VIP*\n♾️ Criações e consultas ilimitadas\n🎬 GIFs e Vídeos\n✍️ Personalização de nome e autor\n🌍 /figsglobal [numero]\n\nDigite */comprarvip Nome | Email | Telefone*`);
             return;
         }
 
         if (body === '/status') {
-            if (user.is_vip) {
-                await client.sendMessage(msg.from, `👑 *Status VIP Ativo!*\nVocê tem acesso ilimitado a todos os comandos.`);
-            } else {
-                await client.sendMessage(msg.from, `📊 *Seu Status Diário (Grátis):*\n\n✂️ Criações: ${user.creations_today} / 10\n🖼️ Consultas: ${user.consults_today} / 3\n\nQuer limites infinitos? Digite */sobrevip*`);
-            }
+            if (user.is_vip) await client.sendMessage(msg.from, `👑 *Status VIP Ativo!*`);
+            else await client.sendMessage(msg.from, `📊 *Seu Status (Grátis):*\n✂️ Criações: ${user.creations_today} / 10\n🖼️ Consultas: ${user.consults_today} / 3`);
             return;
         }
 
-        // 💳 COMPRAR VIP (INTEGRAÇÃO STRIPE)
+        if (body === '/comprar' || body === '!comprar') {
+            let menuLoja = `🛍️ *LOJA DO BOT* 🛍️\nResponda com o *número* do produto:\n\n`;
+            for (const [id, prod] of Object.entries(catalogoProdutos)) {
+                menuLoja += `*[ ${id} ]* - ${prod.nome}\n💰 R$ ${(prod.preco / 100).toFixed(2)}\n📝 ${prod.descricao}\n\n`;
+            }
+            menuLoja += `Para sair, digite *cancelar*.`;
+            userStates.set(userId, { state: 'WAITING_PRODUCT_CHOICE' });
+            await client.sendMessage(msg.from, menuLoja);
+            return;
+        }
+
         if (body.startsWith('/comprarvip')) {
             const args = body.replace('/comprarvip', '').trim().split('|').map(s => s.trim());
             if (args.length < 3) {
-                await client.sendMessage(msg.from, '❌ Formato incorreto. Use:\n*/comprarvip Nome | Email | Telefone*');
+                await client.sendMessage(msg.from, '❌ Use: */comprarvip Nome | Email | Telefone*');
                 return;
             }
 
             await dbRun(`UPDATE Users SET name = ?, email = ?, phone = ? WHERE id = ?`, [args[0], args[1], args[2], userId]);
-            await client.sendMessage(msg.from, '⏳ Gerando seu link de pagamento seguro via Stripe...');
+            await client.sendMessage(msg.from, '⏳ Gerando seu link via Stripe...');
 
             try {
                 const session = await stripe.checkout.sessions.create({
                     line_items: [{
-                        price_data: {
-                            currency: 'brl',
-                            product_data: {
-                                name: 'Acesso VIP - Bot de Figurinhas',
-                                description: 'Figurinhas e consultas ilimitadas, GIFs, personalização de nome e banco global.',
-                            },
-                            unit_amount: 1199, // R$ 9,90 (em centavos)
-                        },
+                        price_data: { currency: 'brl', product_data: { name: 'Acesso VIP', description: 'Figurinhas ilimitadas' }, unit_amount: 1199 },
                         quantity: 1,
                     }],
                     mode: 'payment',
                     success_url: process.env.SUCCESS_URL || 'https://bot-giulia-vip.squareweb.app/sucesso',
                     cancel_url: process.env.CANCEL_URL || 'https://bot-giulia-vip.squareweb.app/cancelado',
-                    metadata: { whatsapp_id: userId } // Essencial: Salva o ID do usuário para o Webhook
+                    metadata: { whatsapp_id: userId, tipo_compra: 'vip' } 
                 });
-
-                await client.sendMessage(msg.from, `Prontinho, ${args[0]}! 💳\n\nPague via Cartão ou PIX acessando o link abaixo. Assim que o pagamento for confirmado, seu VIP será ativado automaticamente!\n\n🔗 ${session.url}`);
+                await client.sendMessage(msg.from, `Prontinho, ${args[0]}! 💳\nPague no link abaixo:\n🔗 ${session.url}`);
             } catch (err) {
-                console.error('Erro ao gerar link Stripe:', err);
-                await client.sendMessage(msg.from, '❌ Erro ao gerar o link de pagamento. Tente novamente mais tarde.');
+                await client.sendMessage(msg.from, '❌ Erro ao gerar link de pagamento.');
             }
             return;
         }
 
        if (body === '!minhasfigs') {
-            console.log(`[LOG] Usuário ${userId} solicitou !minhasfigs`);
             if (!user.is_vip && user.consults_today >= 3) {
-                await client.sendMessage(msg.from, '❌ Limite de 3 consultas diárias atingido. Assine o VIP para consultas ilimitadas! (/sobrevip)');
+                await client.sendMessage(msg.from, '❌ Limite de 3 consultas. Assine o VIP! (/sobrevip)');
                 return;
             }
 
             try {
-                // Buscamos o filename e o mimetype real salvo
                 const userStickers = await dbAll(`SELECT filename, mimetype FROM Stickers WHERE user_id = ?`, [userId]);
-                console.log(`[LOG] Figurinhas encontradas no banco para este ID: ${userStickers.length}`);
-
                 if (!userStickers || userStickers.length === 0) {
-                    await client.sendMessage(msg.from, '⚠️ Você não tem figurinhas registradas no banco de dados! Crie uma usando /criar primeiro.');
+                    await client.sendMessage(msg.from, '⚠️ Nenhuma figurinha salva.');
                 } else {
                     if (!user.is_vip) await dbRun(`UPDATE Users SET consults_today = consults_today + 1 WHERE id = ?`, [userId]);
-                    await client.sendMessage(msg.from, `Enviando suas ${userStickers.length} figurinhas... 🚀`);
+                    await client.sendMessage(msg.from, `Enviando ${userStickers.length} figurinhas... 🚀`);
                     
                     for (const row of userStickers) {
                         const filePath = path.join(stickersDir, row.filename);
                         if (fs.existsSync(filePath)) {
                             const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
-                            
-                            // Se o mimetype for image/webp, mas o arquivo foi criado de forma antiga,
-                            // o whatsapp-web.js quebra. Vamos forçar 'image/jpeg' se o arquivo não tiver o cabeçalho correto
                             let tipoMidia = row.mimetype || 'image/jpeg'; 
-                            if (tipoMidia === 'image/webp' && !stickerData.startsWith('UklGR')) {
-                                // Se não começa com 'UklGR' (cabeçalho RIFF em base64), não é um WebP real!
-                                tipoMidia = 'image/jpeg'; 
-                            }
-
-                            const media = new MessageMedia(tipoMidia, stickerData);
+                            if (tipoMidia === 'image/webp' && !stickerData.startsWith('UklGR')) tipoMidia = 'image/jpeg'; 
                             
-                            await client.sendMessage(msg.from, media, { 
-                                sendMediaAsSticker: true,
-                                stickerName: "Minhas Figs",
-                                stickerAuthor: "Bot VIP"
-                            }).catch(err => console.log(`[ERRO ENVIO] Falha ao converter arquivo antigo: ${row.filename}`));
-                        } else {
-                            console.log(`[LOG] Arquivo listado no banco mas sumiu do disco: ${row.filename}`);
+                            const media = new MessageMedia(tipoMidia, stickerData);
+                            await client.sendMessage(msg.from, media, { sendMediaAsSticker: true, stickerName: "Minhas Figs", stickerAuthor: "Bot" }).catch(() => {});
                         }
                     }
                 }
             } catch (dbErr) {
-                console.error('❌ Erro ao ler tabela Stickers:', dbErr);
-                await client.sendMessage(msg.from, '❌ Erro interno ao acessar seu banco de figurinhas.');
+                await client.sendMessage(msg.from, '❌ Erro interno.');
             }
             return;
         }
 
-        // 🌍 BANCO GLOBAL DE FIGURINHAS (VIP - CORRIGIDO)
         if (body.startsWith('/figsglobal')) {
-            console.log(`[LOG] VIP ${userId} solicitou /figsglobal`);
             if (!user.is_vip) {
-                await client.sendMessage(msg.from, '👑 Comando exclusivo para VIPs! Digite /sobrevip para saber mais.');
+                await client.sendMessage(msg.from, '👑 Exclusivo para VIPs!');
                 return;
             }
             
-            const args = body.split(' ');
-            let limit = parseInt(args[1]);
+            let limit = parseInt(body.split(' ')[1]);
             if (isNaN(limit) || limit <= 0) limit = 5;
             if (limit > 30) limit = 30; 
 
             try {
                 const globalStickers = await dbAll(`SELECT filename, mimetype FROM Stickers ORDER BY RANDOM() LIMIT ?`, [limit]);
-                console.log(`[LOG] Figurinhas globais encontradas no banco: ${globalStickers.length}`);
-
                 if (!globalStickers || globalStickers.length === 0) {
-                    await client.sendMessage(msg.from, '🌍 O banco de dados global está vazio no momento. Crie novas figurinhas usando /criar!');
+                    await client.sendMessage(msg.from, '🌍 Banco de dados vazio.');
                     return;
                 }
 
-                await client.sendMessage(msg.from, `🌍 Puxando ${globalStickers.length} figurinhas aleatórias do multiverso...`);
+                await client.sendMessage(msg.from, `🌍 Puxando ${globalStickers.length} figurinhas aleatórias...`);
                 for (const row of globalStickers) {
-                        const filePath = path.join(stickersDir, row.filename);
-                        if (fs.existsSync(filePath)) {
-                            const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
-                            
-                            // Se o mimetype for image/webp, mas o arquivo foi criado de forma antiga,
-                            // o whatsapp-web.js quebra. Vamos forçar 'image/jpeg' se o arquivo não tiver o cabeçalho correto
-                            let tipoMidia = row.mimetype || 'image/jpeg'; 
-                            if (tipoMidia === 'image/webp' && !stickerData.startsWith('UklGR')) {
-                                // Se não começa com 'UklGR' (cabeçalho RIFF em base64), não é um WebP real!
-                                tipoMidia = 'image/jpeg'; 
-                            }
-
-                            const media = new MessageMedia(tipoMidia, stickerData);
-                            
-                            await client.sendMessage(msg.from, media, { 
-                                sendMediaAsSticker: true,
-                                stickerName: "Minhas Figs",
-                                stickerAuthor: "Bot VIP"
-                            }).catch(err => console.log(`[ERRO ENVIO] Falha ao converter arquivo antigo: ${row.filename}`));
-                        } else {
-                            console.log(`[LOG] Arquivo listado no banco mas sumiu do disco: ${row.filename}`);
-                        }
+                    const filePath = path.join(stickersDir, row.filename);
+                    if (fs.existsSync(filePath)) {
+                        const stickerData = fs.readFileSync(filePath, { encoding: 'base64' });
+                        let tipoMidia = row.mimetype || 'image/jpeg'; 
+                        if (tipoMidia === 'image/webp' && !stickerData.startsWith('UklGR')) tipoMidia = 'image/jpeg'; 
+                        
+                        const media = new MessageMedia(tipoMidia, stickerData);
+                        await client.sendMessage(msg.from, media, { sendMediaAsSticker: true, stickerName: "Global", stickerAuthor: "Bot VIP" }).catch(() => {});
                     }
+                }
             } catch (dbErr) {
-                console.error('❌ Erro no comando /figsglobal:', dbErr);
-                await client.sendMessage(msg.from, '❌ Erro ao realizar busca global no banco de dados.');
+                await client.sendMessage(msg.from, '❌ Erro ao buscar figs globais.');
             }
             return;
         }
-        // ✂️ CRIAÇÃO DE FIGURINHAS
+
         if (body.startsWith('/criar') && msg.hasMedia) {
             if (!user.is_vip && user.creations_today >= 10) {
-                await client.sendMessage(msg.from, '❌ Você atingiu o limite de 10 figurinhas diárias. Torne-se VIP para criações ilimitadas! (/sobrevip)');
+                await client.sendMessage(msg.from, '❌ Limite de 10 figurinhas diárias atingido.');
                 return;
             }
 
             const media = await msg.downloadMedia();
-            
             if (media && (media.mimetype.startsWith('image/') || media.mimetype.startsWith('video/'))) {
                 if (user.is_vip) {
                     userStates.set(userId, { state: 'WAITING_METADATA', media: media });
-                    await client.sendMessage(msg.from, '👑 *Criação VIP!*\nDeseja colocar um nome e autor na sua figurinha?\n\nResponda no formato: *Nome da Figurinha | Seu Nome*\nOu responda *Não* para usar o padrão.');
+                    await client.sendMessage(msg.from, '👑 *Criação VIP!*\nResponda: *Nome | Autor*\nOu responda *Não* para padrão.');
                     return; 
                 }
 
                 const filename = `sticker_${userId.replace(/[^0-9]/g, '')}_${Date.now()}.webp`;
                 fs.writeFileSync(path.join(stickersDir, filename), media.data, 'base64');
-                await dbRun(`INSERT INTO Stickers (user_id, filename) VALUES (?, ?)`, [userId, filename]);
+                await dbRun(`INSERT INTO Stickers (user_id, filename, mimetype) VALUES (?, ?, ?)`, [userId, filename, media.mimetype]);
                 await dbRun(`UPDATE Users SET creations_today = creations_today + 1 WHERE id = ?`, [userId]);
 
-                await client.sendMessage(msg.from, media, { 
-                    sendMediaAsSticker: true,
-                    stickerName: "Feito no Bot XYZ",
-                    stickerAuthor: "Sua Marca"
-                });
-                await client.sendMessage(msg.from, '✅ Figurinha criada e guardada!');
+                await client.sendMessage(msg.from, media, { sendMediaAsSticker: true, stickerName: "Bot", stickerAuthor: "Sua Marca" });
+                await client.sendMessage(msg.from, '✅ Figurinha criada!');
             } else {
-                await client.sendMessage(msg.from, '❌ Envie uma mídia válida junto com o comando.');
+                await client.sendMessage(msg.from, '❌ Envie uma mídia válida.');
             }
             return;
         }
 
-        // 📥 SALVAMENTO SILENCIOSO
         if (msg.hasMedia && !userStates.has(userId)) {
             const media = await msg.downloadMedia();
             if (media && media.mimetype && media.mimetype.startsWith('image/')) {
                 const filename = `sticker_${userId.replace(/[^0-9]/g, '')}_${Date.now()}.webp`;
                 fs.writeFileSync(path.join(stickersDir, filename), media.data, 'base64');
-                // ALTERADO PARA SALVAR O MIMETYPE JUNTO:
                 await dbRun(`INSERT INTO Stickers (user_id, filename, mimetype) VALUES (?, ?, ?)`, [userId, filename, media.mimetype]);
                 await dbRun(`UPDATE Users SET creations_today = creations_today + 1 WHERE id = ?`, [userId]);
             }
         }
 
     } catch (err) {
-        console.error('❌ Erro no processamento da mensagem:', err);
+        console.error('Erro:', err);
     }
 });
 
-process.on('uncaughtException', (err) => console.error('🔥 Uncaught Exception:', err));
-process.on('unhandledRejection', (reason) => console.error('🔥 Unhandled Rejection:', reason));
+process.on('uncaughtException', (err) => console.error('Uncaught Exception:', err));
+process.on('unhandledRejection', (reason) => console.error('Unhandled Rejection:', reason));
 
 client.initialize();
-console.log('⏳ Inicializando bot do WhatsApp...');
-console.log('✅ Variáveis de ambiente carregadas com sucesso!');
-console.log('   - STRIPE_SECRET_KEY:', process.env.STRIPE_SECRET_KEY ? '✔️ Configurada' : '❌ Não configurada');
-console.log('   - STRIPE_WEBHOOK_SECRET:', process.env.STRIPE_WEBHOOK_SECRET ? '✔️ Configurada' : '❌ Não configurada');
+console.log('Inicializando bot...');
