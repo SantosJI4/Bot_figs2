@@ -51,51 +51,59 @@ const catalogoProdutos = {
             }
         }
     },
-    '3': {
-        nome: "cybersecurity",
-        produtos: {
-            produtos: {
+    '2': {
+        nome: "Cybersecurity",
+        subcategorias: {
+            '1': {
+                nome: "Livros e Manuais",
+                produtos: {
                     '1': { 
-                        nome: "Hacking com Kali Linux Técnicas práticas para testes de invasão (James Broad  Andrew Bindner [Broad, James])", 
+                        nome: "Hacking com Kali Linux Técnicas práticas para testes de invasão (James Broad Andrew Bindner [Broad, James])", 
                         preco: 2489, 
-                        descricao: "aprenda a usar o Kali Linux para testes de invasão e segurança ofensiva.",
+                        descricao: "Aprenda a usar o Kali Linux para testes de invasão e segurança ofensiva.",
                         tipoEntrega: "arquivo",
-                        payload: "cybersecurity/Hacking com Kali Linux Técnicas práticas para testes de invasão (James Broad  Andrew Bindner [Broad, James]).pdf" 
+                        payload: "cybersecurity/Hacking com Kali Linux Técnicas práticas para testes de invasão (James Broad Andrew Bindner [Broad, James]).pdf" 
                     },
                     '2': {
-                        nome: "Livro - Programação Avançada em Lua assembly",
+                        nome: "Livro - Programação Avançada em Lua assembly",
                         preco: 2489,
                         descricao: "Aprenda a programar em Lua assembly para desenvolvimento de exploits e segurança ofensiva.",
                         tipoEntrega: "arquivo",
-                        payload: "cybersecurity/Livro - Programação Avançada em Lua assembly.pdf"
+                        payload: "cybersecurity/Livro - Programação Avançada em Lua assembly.pdf"
                     }
                 }
             }
-        },
-    '4': {
+        }
+    },
+    '3': {
         nome: "Pendrives de musicas",
-        produtos: {
-            '1': { 
-                nome: "Pendrive 8GB - Top Hits 2026", 
-                preco: 1299, 
-                descricao: "Melhor playlist do ano, direto no seu pendrive!",
-                tipoEntrega: "link", 
-                payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
-            },
-            '2': { 
-                nome: "Pendrive 16GB - Hits 2026", 
-                preco: 2489, 
-                descricao: "Mais música, mais memória! atualizadinha!",
-                tipoEntrega: "link", 
-                payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
-            },
-            '3': { 
-                nome: "Festa junina 2026 - Pendrive 16GB [em alta 🔥]", 
-                preco: 1669, 
-                descricao: "melhores musicas de festa junina 2026, atualizada com os hits mais tocados do momento!",
-                tipoEntrega: "link", 
-                payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
-            },
+        subcategorias: {
+            '1': {
+                nome: "Playlists 2026",
+                produtos: {
+                    '1': { 
+                        nome: "Pendrive 8GB - Top Hits 2026", 
+                        preco: 1299, 
+                        descricao: "Melhor playlist do ano, direto no seu pendrive!",
+                        tipoEntrega: "link", 
+                        payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
+                    },
+                    '2': { 
+                        nome: "Pendrive 16GB - Hits 2026", 
+                        preco: 2489, 
+                        descricao: "Mais música, mais memória! atualizadinha!",
+                        tipoEntrega: "link", 
+                        payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
+                    },
+                    '3': { 
+                        nome: "Festa junina 2026 - Pendrive 16GB [em alta 🔥]", 
+                        preco: 1669, 
+                        descricao: "Melhores musicas de festa junina 2026, atualizada com os hits mais tocados do momento!",
+                        tipoEntrega: "link", 
+                        payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
+                    }
+                }
+            }
         }
     }
 };
