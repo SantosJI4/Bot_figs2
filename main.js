@@ -41,7 +41,7 @@ const catalogoProdutos = {
         preco: 8000, 
         descricao: "Script indetectável atualizado.",
         tipoEntrega: "arquivo", 
-        payload: "script_bypass_v2.zip" 
+        payload: "Livro - Programação Avançada em Lua assembly.pdf" 
     }
 };
 
