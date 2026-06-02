@@ -22,26 +22,50 @@ if (!fs.existsSync(productsDir)) fs.mkdirSync(productsDir);
 const userStates = new Map(); 
 
 const catalogoProdutos = {
-    '1': { 
-        nome: "E-book: Guia Definitivo do Kali Linux", 
-        preco: 2500, 
-        descricao: "Aprenda os fundamentos de pentest.",
-        tipoEntrega: "arquivo",
-        payload: "ebook_kali.pdf" 
+    '1': {
+        nome: "Cybersecurity",
+        produtos: {
+            '1': { 
+                nome: "E-book: Guia Definitivo do Kali Linux", 
+                preco: 2299, 
+                descricao: "Aprenda os fundamentos de pentest.",
+                tipoEntrega: "arquivo",
+                payload: "cybersecurity/Hacking com Kali Linux Técnicas práticas para testes de invasão (James Broad  Andrew Bindner [Broad, James]).pdf" 
+            },
+            '2': { 
+                nome: "Livro - Aprenda Lua/assembly avançado para hacking de jogos", 
+                preco: 2499, 
+                descricao: "Livro avançado para hackers de jogos. Lua e assembly é essencial para entrar na area(focado mais para cheat engine).",
+                tipoEntrega: "arquivo", 
+                payload: "cybersecurity/Livro - Programação Avançada em Lua assembly.pdf" 
+            }
+        }
     },
-    '2': { 
-        nome: "Acesso ao Grupo VIP Hackers", 
-        preco: 5000, 
-        descricao: "Faça networking com a elite.",
-        tipoEntrega: "link", 
-        payload: "https://chat.whatsapp.com/SEU_LINK_AQUI" 
-    },
-    '3': { 
-        nome: "Script Python Bypass Premium", 
-        preco: 8000, 
-        descricao: "Script indetectável atualizado.",
-        tipoEntrega: "arquivo", 
-        payload: "Livro - Programação Avançada em Lua assembly.pdf" 
+    '2': {
+        nome: "Pendrives de musicas",
+        produtos: {
+            '1': { 
+                nome: "Pendrive 8GB - Top Hits 2026", 
+                preco: 1299, 
+                descricao: "Melhor playlist do ano, direto no seu pendrive!",
+                tipoEntrega: "link", 
+                payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
+            },
+            '2': { 
+                nome: "Pendrive 16GB - Hits 2026", 
+                preco: 2489, 
+                descricao: "Mais música, mais memória! atualizadinha!",
+                tipoEntrega: "link", 
+                payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
+            },
+            '3': { 
+                nome: "Festa junina 2026 - Pendrive 16GB [em alta 🔥]", 
+                preco: 1669, 
+                descricao: "Mais música, mais memória! atualizadinha!",
+                tipoEntrega: "link", 
+                payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
+            },
+        }
     }
 };
 
@@ -135,8 +159,9 @@ app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) =
             await client.sendMessage(userId, '🎉 *PAGAMENTO APROVADO!* 🎉\n\nSeja muito bem-vindo ao VIP! O seu acesso ilimitado já está ativo. Digite */sobrevip* para ver seus novos poderes!');
         
         } else if (tipoCompra === 'produto') {
-            const productId = session.metadata.product_id;
-            const produto = catalogoProdutos[productId];
+            const catId = session.metadata.category_id;
+            const prodId = session.metadata.product_id;
+            const produto = catalogoProdutos[catId]?.produtos[prodId];
 
             if (!produto) {
                  await client.sendMessage(userId, '✅ Pagamento aprovado, mas houve um erro ao localizar seu produto. Chame o suporte!');
@@ -202,18 +227,46 @@ client.on('message', async msg => {
                 return;
             }
 
-            if (stateData.state === 'WAITING_PRODUCT_CHOICE') {
-                const escolha = body.trim();
-                
-                if (escolha.toLowerCase() === 'cancelar') {
+            if (stateData.state === 'WAITING_CATEGORY_CHOICE') {
+                const escolhaCat = body.trim();
+
+                if (escolhaCat.toLowerCase() === 'cancelar') {
                     userStates.delete(userId);
                     await client.sendMessage(msg.from, '🛑 Compra cancelada.');
                     return;
                 }
 
-                const produto = catalogoProdutos[escolha];
+                const categoria = catalogoProdutos[escolhaCat];
+                if (!categoria) {
+                    await client.sendMessage(msg.from, '❌ Categoria inválida. Digite um número válido ou *cancelar*.');
+                    return;
+                }
+
+                let menuProdutos = `📁 *Categoria: ${categoria.nome}* 📁\nResponda com o *número* do produto que deseja comprar:\n\n`;
+                for (const [prodId, prod] of Object.entries(categoria.produtos)) {
+                    menuProdutos += `*[ ${prodId} ]* - ${prod.nome}\n💰 R$ ${(prod.preco / 100).toFixed(2)}\n📝 ${prod.descricao}\n\n`;
+                }
+                menuProdutos += `Para voltar ou sair, digite *cancelar*.`;
+
+                userStates.set(userId, { state: 'WAITING_PRODUCT_CHOICE', categoryId: escolhaCat });
+                await client.sendMessage(msg.from, menuProdutos);
+                return;
+            }
+
+            if (stateData.state === 'WAITING_PRODUCT_CHOICE') {
+                const escolhaProd = body.trim();
+
+                if (escolhaProd.toLowerCase() === 'cancelar') {
+                    userStates.delete(userId);
+                    await client.sendMessage(msg.from, '🛑 Compra cancelada.');
+                    return;
+                }
+
+                const catId = stateData.categoryId;
+                const produto = catalogoProdutos[catId]?.produtos[escolhaProd];
+
                 if (!produto) {
-                    await client.sendMessage(msg.from, '❌ Número inválido. Digite um número da lista ou *cancelar*.');
+                    await client.sendMessage(msg.from, '❌ Produto inválido. Digite um número válido da lista ou *cancelar*.');
                     return;
                 }
 
@@ -228,10 +281,10 @@ client.on('message', async msg => {
                         mode: 'payment',
                         success_url: process.env.SUCCESS_URL || 'https://bot-giulia-vip.squareweb.app/sucesso',
                         cancel_url: process.env.CANCEL_URL || 'https://bot-giulia-vip.squareweb.app/cancelado',
-                        metadata: { whatsapp_id: userId, tipo_compra: 'produto', product_id: escolha }
+                        metadata: { whatsapp_id: userId, tipo_compra: 'produto', category_id: catId, product_id: escolhaProd }
                     });
 
-                    await client.sendMessage(msg.from, `🛒 *Pedido gerado!*\n\nProduto: ${produto.nome}\nValor: R$ ${(produto.preco / 100).toFixed(2)}\n\nPague via Cartão ou PIX no link abaixo.\n🔗 ${session.url}`);
+                    await client.sendMessage(msg.from, `🛒 *Pedido gerado!*\n\nProduto: ${produto.nome}\nValor: R$ ${(produto.preco / 100).toFixed(2)}\n\nPague via Cartão ou PIX no link abaixo:\n🔗 ${session.url}`);
                     userStates.delete(userId);
                 } catch (err) {
                     await client.sendMessage(msg.from, '❌ Erro ao processar o pagamento.');
@@ -258,13 +311,14 @@ client.on('message', async msg => {
         }
 
         if (body === '/comprar' || body === '!comprar') {
-            let menuLoja = `🛍️ *LOJA DO BOT* 🛍️\nResponda com o *número* do produto:\n\n`;
-            for (const [id, prod] of Object.entries(catalogoProdutos)) {
-                menuLoja += `*[ ${id} ]* - ${prod.nome}\n💰 R$ ${(prod.preco / 100).toFixed(2)}\n📝 ${prod.descricao}\n\n`;
+            let menuCategorias = `🛍️ *LOJA DO BOT - CATEGORIAS* 🛍️\nResponda com o *número* da categoria desejada:\n\n`;
+            for (const [catId, cat] of Object.entries(catalogoProdutos)) {
+                menuCategorias += `*[ ${catId} ]* - ${cat.nome}\n`;
             }
-            menuLoja += `Para sair, digite *cancelar*.`;
-            userStates.set(userId, { state: 'WAITING_PRODUCT_CHOICE' });
-            await client.sendMessage(msg.from, menuLoja);
+            menuCategorias += `\nPara sair, digite *cancelar*.`;
+            
+            userStates.set(userId, { state: 'WAITING_CATEGORY_CHOICE' });
+            await client.sendMessage(msg.from, menuCategorias);
             return;
         }
 
