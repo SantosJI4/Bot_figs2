@@ -23,25 +23,56 @@ const userStates = new Map();
 
 const catalogoProdutos = {
     '1': {
-        nome: "Cybersecurity",
-        produtos: {
-            '1': { 
-                nome: "E-book: Guia Definitivo do Kali Linux", 
-                preco: 2299, 
-                descricao: "Aprenda os fundamentos de pentest.",
-                tipoEntrega: "arquivo",
-                payload: "cybersecurity/Hacking com Kali Linux Técnicas práticas para testes de invasão (James Broad  Andrew Bindner [Broad, James]).pdf" 
+        nome: "Ebooks diversos",
+        subcategorias: {
+            '1': {
+                nome: "Receitas",
+                produtos: {
+                    '1': { 
+                        nome: "Como Fazer um Bolo Perfeito", 
+                        preco: 1500, 
+                        descricao: "Aprenda confeitaria do zero.",
+                        tipoEntrega: "arquivo",
+                        payload: "ebooks/receitas/como_fazer_um_bolo.pdf" 
+                    }
+                }
             },
-            '2': { 
-                nome: "Livro - Aprenda Lua/assembly avançado para hacking de jogos", 
-                preco: 2499, 
-                descricao: "Livro avançado para hackers de jogos. Lua e assembly é essencial para entrar na area(focado mais para cheat engine).",
-                tipoEntrega: "arquivo", 
-                payload: "cybersecurity/Livro - Programação Avançada em Lua assembly.pdf" 
+            '2': {
+                nome: "Livros Técnicos",
+                produtos: {
+                    '1': { 
+                        nome: "Clean Code", 
+                        preco: 4500, 
+                        descricao: "Manual de artesanato de software.",
+                        tipoEntrega: "arquivo",
+                        payload: "ebooks/livros/clean_code.pdf" 
+                    }
+                }
             }
         }
     },
-    '2': {
+    '3': {
+        nome: "cybersecurity",
+        produtos: {
+            produtos: {
+                    '1': { 
+                        nome: "Hacking com Kali Linux Técnicas práticas para testes de invasão (James Broad  Andrew Bindner [Broad, James])", 
+                        preco: 2489, 
+                        descricao: "aprenda a usar o Kali Linux para testes de invasão e segurança ofensiva.",
+                        tipoEntrega: "arquivo",
+                        payload: "cybersecurity/Hacking com Kali Linux Técnicas práticas para testes de invasão (James Broad  Andrew Bindner [Broad, James]).pdf" 
+                    },
+                    '2': {
+                        nome: "Livro - Programação Avançada em Lua assembly",
+                        preco: 2489,
+                        descricao: "Aprenda a programar em Lua assembly para desenvolvimento de exploits e segurança ofensiva.",
+                        tipoEntrega: "arquivo",
+                        payload: "cybersecurity/Livro - Programação Avançada em Lua assembly.pdf"
+                    }
+                }
+            }
+        },
+    '4': {
         nome: "Pendrives de musicas",
         produtos: {
             '1': { 
@@ -61,7 +92,7 @@ const catalogoProdutos = {
             '3': { 
                 nome: "Festa junina 2026 - Pendrive 16GB [em alta 🔥]", 
                 preco: 1669, 
-                descricao: "Mais música, mais memória! atualizadinha!",
+                descricao: "melhores musicas de festa junina 2026, atualizada com os hits mais tocados do momento!",
                 tipoEntrega: "link", 
                 payload: "https://drive.google.com/drive/folders/12OMdWH2GoJEm3a-w4eYC8Y2teY6MZQgL?usp=sharing_eip&ts=6938ba67" 
             },
@@ -160,8 +191,9 @@ app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) =
         
         } else if (tipoCompra === 'produto') {
             const catId = session.metadata.category_id;
+            const subCatId = session.metadata.subcategory_id;
             const prodId = session.metadata.product_id;
-            const produto = catalogoProdutos[catId]?.produtos[prodId];
+            const produto = catalogoProdutos[catId]?.subcategorias[subCatId]?.produtos[prodId];
 
             if (!produto) {
                  await client.sendMessage(userId, '✅ Pagamento aprovado, mas houve um erro ao localizar seu produto. Chame o suporte!');
@@ -229,7 +261,6 @@ client.on('message', async msg => {
 
             if (stateData.state === 'WAITING_CATEGORY_CHOICE') {
                 const escolhaCat = body.trim();
-
                 if (escolhaCat.toLowerCase() === 'cancelar') {
                     userStates.delete(userId);
                     await client.sendMessage(msg.from, '🛑 Compra cancelada.');
@@ -242,20 +273,45 @@ client.on('message', async msg => {
                     return;
                 }
 
-                let menuProdutos = `📁 *Categoria: ${categoria.nome}* 📁\nResponda com o *número* do produto que deseja comprar:\n\n`;
-                for (const [prodId, prod] of Object.entries(categoria.produtos)) {
+                let menuSub = `📁 *Subcategorias de: ${categoria.nome}* 📁\nResponda com o número da subcategoria:\n\n`;
+                for (const [subId, sub] of Object.entries(categoria.subcategorias)) {
+                    menuSub += `*[ ${subId} ]* - ${sub.nome}\n`;
+                }
+                menuSub += `\nPara sair, digite *cancelar*.`;
+
+                userStates.set(userId, { state: 'WAITING_SUBCATEGORY_CHOICE', categoryId: escolhaCat });
+                await client.sendMessage(msg.from, menuSub);
+                return;
+            }
+
+            if (stateData.state === 'WAITING_SUBCATEGORY_CHOICE') {
+                const escolhaSub = body.trim();
+                if (escolhaSub.toLowerCase() === 'cancelar') {
+                    userStates.delete(userId);
+                    await client.sendMessage(msg.from, '🛑 Compra cancelada.');
+                    return;
+                }
+
+                const catId = stateData.categoryId;
+                const subcategoria = catalogoProdutos[catId]?.subcategorias[escolhaSub];
+                if (!subcategoria) {
+                    await client.sendMessage(msg.from, '❌ Subcategoria inválida. Digite um número válido ou *cancelar*.');
+                    return;
+                }
+
+                let menuProdutos = `🛍️ *Produtos em: ${subcategoria.nome}* 🛍️\nResponda com o número do produto:\n\n`;
+                for (const [prodId, prod] of Object.entries(subcategoria.produtos)) {
                     menuProdutos += `*[ ${prodId} ]* - ${prod.nome}\n💰 R$ ${(prod.preco / 100).toFixed(2)}\n📝 ${prod.descricao}\n\n`;
                 }
-                menuProdutos += `Para voltar ou sair, digite *cancelar*.`;
+                menuProdutos += `Para sair, digite *cancelar*.`;
 
-                userStates.set(userId, { state: 'WAITING_PRODUCT_CHOICE', categoryId: escolhaCat });
+                userStates.set(userId, { state: 'WAITING_PRODUCT_CHOICE', categoryId: catId, subcategoryId: escolhaSub });
                 await client.sendMessage(msg.from, menuProdutos);
                 return;
             }
 
             if (stateData.state === 'WAITING_PRODUCT_CHOICE') {
                 const escolhaProd = body.trim();
-
                 if (escolhaProd.toLowerCase() === 'cancelar') {
                     userStates.delete(userId);
                     await client.sendMessage(msg.from, '🛑 Compra cancelada.');
@@ -263,10 +319,11 @@ client.on('message', async msg => {
                 }
 
                 const catId = stateData.categoryId;
-                const produto = catalogoProdutos[catId]?.produtos[escolhaProd];
+                const subCatId = stateData.subcategoryId;
+                const produto = catalogoProdutos[catId]?.subcategorias[subCatId]?.produtos[escolhaProd];
 
                 if (!produto) {
-                    await client.sendMessage(msg.from, '❌ Produto inválido. Digite um número válido da lista ou *cancelar*.');
+                    await client.sendMessage(msg.from, '❌ Produto inválido. Digite um número válido ou *cancelar*.');
                     return;
                 }
 
@@ -281,7 +338,13 @@ client.on('message', async msg => {
                         mode: 'payment',
                         success_url: process.env.SUCCESS_URL || 'https://bot-giulia-vip.squareweb.app/sucesso',
                         cancel_url: process.env.CANCEL_URL || 'https://bot-giulia-vip.squareweb.app/cancelado',
-                        metadata: { whatsapp_id: userId, tipo_compra: 'produto', category_id: catId, product_id: escolhaProd }
+                        metadata: { 
+                            whatsapp_id: userId, 
+                            tipo_compra: 'produto', 
+                            category_id: catId, 
+                            subcategory_id: subCatId, 
+                            product_id: escolhaProd 
+                        }
                     });
 
                     await client.sendMessage(msg.from, `🛒 *Pedido gerado!*\n\nProduto: ${produto.nome}\nValor: R$ ${(produto.preco / 100).toFixed(2)}\n\nPague via Cartão ou PIX no link abaixo:\n🔗 ${session.url}`);
