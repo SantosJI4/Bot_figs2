@@ -105,7 +105,106 @@ const catalogoProdutos = {
                 }
             }
         }
-    }
+    },
+    '4': {
+        nome: "Cursos Onlines",
+        subcategorias: {
+            '1': {
+                nome: "Cursos tecnico",
+                produtos: {
+                    '1': { 
+                        nome: "curso de eletricista residencial - Telegram", 
+                        preco: 2599, 
+                        descricao: "Aprenda com o melhor professor como ser um tecnico eletricista residencial, curso completo, do zero. pela metade do preço original.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/+yZVCSvSwWQw0OTMx" 
+                    },
+                    '2': { 
+                        nome: "Curso de CFTV - Instalação e Manutenção de câmeras", 
+                        preco: 2489, 
+                        descricao: "Aprenda a instalar e manter sistemas de CFTV com este curso completo, ideal para iniciantes e profissionais que desejam aprimorar suas habilidades.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/+5sECAlTDCOhlZGVh" 
+                    },
+                    '3': { 
+                        nome: "Técnicas de invasão de redes sem fios", 
+                        preco: 1089, 
+                        descricao: "estude as melhores tecnicas para invasão de redes sem fios, curso completo, do zero, ideal para quem quer aprender sobre segurança ofensiva e pentesting.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/joinchat/ykYpDxojm3BhY2Jh" 
+                    },
+                    '4': { 
+                        nome: "Técnico em energia solar", 
+                        preco: 1089, 
+                        descricao: "Aprenda a instalar e manter sistemas de energia solar com este curso completo, ideal para iniciantes e profissionais que desejam aprimorar suas habilidades.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/+kLGNRAefxj84YTIx" 
+                    },
+                    '5': { 
+                        nome: "Aprenda criar jogos na godot 3.2 e a GDscript sem dificuldade", 
+                        preco: 1089, 
+                        descricao: "Aprenda a criar jogos na Godot 3.2 e na linguagem GDscript sem dificuldade, curso completo, do zero, ideal para iniciantes e profissionais que desejam aprimorar suas habilidades.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/+Vmn5iCWjMp84MzY5" 
+                    },
+                    '6': { 
+                        nome: "Ethical Hacking e Pentest Profissional - Curso Prático", 
+                        preco: 1089, 
+                        descricao: "seja um hacker etico e pentester profissional, curso completo, do zero, ideal para iniciantes e profissionais que desejam aprimorar suas habilidades.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/joinchat/s4AU2k6uv6tkM2Ux" 
+                    },
+                    '7': { 
+                        nome: "Design IA - Curso", 
+                        preco: 1099, 
+                        descricao: "Aprenda a usar a inteligência artificial para criar designs incríveis, com este curso completo que abrange desde os fundamentos até as técnicas avançadas de design assistido por IA.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/joinchat/c1SQzLAKXpRkMWRh" 
+                    }
+                }
+            },
+            '2': {
+                nome: "Cursos Desenvolvimento Pessoal",
+                produtos: {
+                    '1': { 
+                        nome: "A Arte da Imperfeição para o Desenvolvimento Pessoal", 
+                        preco: 1299, 
+                        descricao: "Descubra como a imperfeição pode ser uma aliada poderosa no seu desenvolvimento pessoal, ajudando a superar o medo do fracasso e a alcançar seus objetivos com autenticidade e confiança.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/+mGtLGbRVBcAyMDE0" 
+                    },
+                    '2': { 
+                        nome: "Crescimento Acelerado com IA – Gabi e Rafaela", 
+                        preco: 1299, 
+                        descricao: "Aprenda a usar a inteligência artificial para acelerar seu crescimento pessoal e profissional, com dicas práticas e estratégias eficazes para aproveitar ao máximo as ferramentas de IA disponíveis.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/joinchat/iXWB7nLxxvgwN2Ix" 
+                    },
+                    '3': { 
+                        nome: "Maestria Emocional Para Homens-Márcio Micheli", 
+                        preco: 1299, 
+                        descricao: "Aprenda a dominar suas emoções e desenvolver uma força interior que o ajude a lidar com os desafios da vida com confiança e resiliência.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/+Tfgzghe0FTg5YzAx" 
+                    },
+                    '4': { 
+                        nome: "Autoconhecimento Pedro Calabrez", 
+                        preco: 1299, 
+                        descricao: "Descubra o poder do autoconhecimento para transformar sua vida, com insights profundos e exercícios práticos que o ajudarão a entender melhor a si mesmo e a alcançar seus objetivos pessoais e profissionais.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/+w2o65G-G_xNmOWRh" 
+                    },
+                    '5': { 
+                        nome: "Nomade Milionário - Thiago Finch", 
+                        preco: 1299, 
+                        descricao: "Aprenda a viver como um nômade digital milionário, com dicas práticas e estratégias para construir uma vida de liberdade financeira e geográfica, aproveitando as oportunidades do mundo digital.",
+                        tipoEntrega: "link", 
+                        payload: "https://t.me/+xOgPvKe872I3ZTdh" 
+                    },
+                }
+            }
+        }
+    },
 };
 
 const db = new sqlite3.Database('./bot.db', (err) => {
@@ -247,8 +346,8 @@ client.on('message', async msg => {
             const stateData = userStates.get(userId);
             
             if (stateData.state === 'WAITING_METADATA') {
-                let stickerName = "Criado por VIP";
-                let stickerAuthor = "Bot do Maurício";
+                let stickerName = "Criado por VIP - BOT GIULIA";
+                let stickerAuthor = "75999648252";
 
                 if (body.toLowerCase() !== 'não' && body.toLowerCase() !== 'nao') {
                     const parts = body.split('|').map(s => s.trim());
